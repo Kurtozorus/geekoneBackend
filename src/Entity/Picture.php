@@ -7,6 +7,7 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: PictureRepository::class)]
 class Picture
@@ -16,12 +17,17 @@ class Picture
     #[ORM\Column]
     private ?int $id = null;
 
+    #[Assert\NotNull]
     #[ORM\Column(type: Types::BLOB)]
     private $imageData = null;
+
+    #[ORM\Column(length: 255)]
+    private ?string $imagePath = null;
 
     #[ORM\Column(length: 32)]
     private ?string $title = null;
 
+    #[Assert\NotBlank]
     #[ORM\Column(length: 64)]
     private ?string $slug = null;
 
@@ -32,7 +38,7 @@ class Picture
     private ?\DateTimeImmutable $updatedAt = null;
 
     #[ORM\ManyToOne(inversedBy: 'pictures')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Store $store = null;
 
     /**
@@ -63,6 +69,17 @@ class Picture
         return $this;
     }
 
+    public function getImagePath(): ?string
+    {
+        return $this->imagePath;
+    }
+    
+    public function setImagePath(?string $imagePath): static
+    {
+        $this->imagePath = $imagePath;
+    
+        return $this;
+    }
     public function getTitle(): ?string
     {
         return $this->title;

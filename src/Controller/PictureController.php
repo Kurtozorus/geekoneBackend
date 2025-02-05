@@ -42,28 +42,88 @@ class PictureController extends AbstractController
 
         // Vérification des données
         if (!$title) {
-            return new JsonResponse(['error' => 'Title is required'], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                ['error' => 'Title is required'],
+                Response::HTTP_BAD_REQUEST
+            );
         }
         if (!$slug) {
-            return new JsonResponse(['error' => 'Slug is required'], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                ['error' => 'Slug is required'],
+                Response::HTTP_BAD_REQUEST
+            );
         }
         if (!$pictureFile && empty($fileData)) {
-            return new JsonResponse(['error' => 'No file data provided'], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                ['error' => 'No file data provided'],
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         // Gestion de l'image
-        $fileName = uniqid(); // Un nom de fichier unique
+        // Utilisation d'un nom de fichier unique pour éviter les conflits
+        $fileName = uniqid('', true);
+
+        // Extensions autorisées
+        $allowedExtensions = [
+            'jpg',
+            'jpeg',
+            'png',
+            'gif'
+        ];
+        // Limite de taille (5MB)
+        // $maxFileSize = 5 * 1024 * 1024;
+
         if ($pictureFile) {
             // Si un fichier est téléchargé
             $extension = $pictureFile->guessExtension();
+
+            // Vérification de l'extension du fichier
+            if (!in_array(strtolower($extension), $allowedExtensions)) {
+                return new JsonResponse(
+                    ['error' => 'Invalid file type. Allowed types are jpg, png, jpeg, gif.'],
+                    Response::HTTP_BAD_REQUEST
+                );
+            }
+
+            // Vérification de la taille du fichier
+            // if ($pictureFile->getSize() > $maxFileSize) {
+            //     return new JsonResponse(
+            //         ['error' => 'File size exceeds the limit of 5MB.'],
+            //         Response::HTTP_BAD_REQUEST
+            //     );
+            // }
+
+            // Générer un nom unique pour éviter les collisions
             $fileName .= '.' . $extension;
-            $pictureFile->move($this->uploadDir, $fileName);
-            $fileContent = file_get_contents($this->uploadDir . $fileName);
+
+            // Déplacer le fichier dans le répertoire sécurisé
+            $pictureFile->move(
+                $this->uploadDir,
+                $fileName
+            );
+
+            $fileContent = file_get_contents(
+                $this->uploadDir . '/' . $fileName
+            );
         } else {
             // Si l'image est envoyée en base64
-            $fileName .= '-' . $fileName;
+            if (base64_encode(base64_decode($fileData, true)) !== $fileData) {
+                return new JsonResponse(
+                    ['error' => 'Invalid base64 data'],
+                    Response::HTTP_BAD_REQUEST
+                );
+            }
+
+            // Ajouter un suffixe unique pour éviter les collisions
+            $fileName .= '-' . uniqid();
             $fileContent = base64_decode($fileData);
-            file_put_contents($this->uploadDir . $fileName, $fileContent);
+
+            // Sauvegarder le fichier décodé dans le répertoire sécurisé
+            file_put_contents(
+                $this->uploadDir . '/' . $fileName,
+                $fileContent
+            );
         }
 
         // Générer l'URL du fichier
@@ -72,11 +132,14 @@ class PictureController extends AbstractController
         // Création de l'entité Picture
         $picture = new Picture();
         $picture->setFilePath($fileUrl);
-        $picture->setImageData($fileContent);  // L'image en BLOB
+        $picture->setImageData($fileContent);
         $picture->setImagePath($fileName);
-        $picture->setTitle($title, $slugger);  // Titre et slug (si nécessaire)
-        $picture->setSlug($slug);  // Assigner le slug fourni ou généré
+        // Titre et slug (si nécessaire)
+        $picture->setTitle($title, $slugger);
+        // Assigner le slug fourni ou généré
+        $picture->setSlug($slug);
         $picture->setCreatedAt(new \DateTimeImmutable());
+
         // Validation de l'entité
         $errors = $validator->validate($picture);
         if (count($errors) > 0) {

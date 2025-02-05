@@ -8,6 +8,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\String\Slugger\SluggerInterface;
 
 #[ORM\Entity(repositoryClass: PictureRepository::class)]
 class Picture
@@ -17,19 +18,26 @@ class Picture
     #[ORM\Column]
     private ?int $id = null;
 
-    #[Assert\NotNull]
-    #[ORM\Column(type: Types::BLOB)]
-    private $imageData = null;
+    #[ORM\Column(type: Types::BLOB, nullable: true)]
+    private $imageData;
 
     #[ORM\Column(length: 255)]
     private ?string $imagePath = null;
 
-    #[ORM\Column(length: 32)]
-    private ?string $title = null;
+    #[ORM\Column(nullable: true, length: 32)]
+    private ?string $title;
+
+    #[Assert\NotBlank(message: "Slug cannot be empty.")]
+    #[Assert\Regex(
+        pattern: "/^[a-z0-9-]+$/",
+        message: "Slug must contain only lowercase letters, numbers, and hyphens."
+    )]
+    #[ORM\Column(nullable: true, length: 32)]
+    private ?string $slug;
 
     #[Assert\NotBlank]
-    #[ORM\Column(length: 64)]
-    private ?string $slug = null;
+    #[Assert\Url]
+    private ?string $filePath = null;
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
@@ -73,11 +81,11 @@ class Picture
     {
         return $this->imagePath;
     }
-    
+
     public function setImagePath(?string $imagePath): static
     {
         $this->imagePath = $imagePath;
-    
+
         return $this;
     }
     public function getTitle(): ?string
@@ -85,9 +93,13 @@ class Picture
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(string $title, SluggerInterface $slugger): static
     {
-        $this->title = $title;
+        // S'assurer que le titre est encodé en UTF-8
+        $title = mb_convert_encoding($title, 'UTF-8', 'UTF-8');  // Normaliser l'encodage du titre
+
+        $this->title = $title;  // Définir le titre
+        $this->slug = $slugger->slug($title)->lower();  // Générer un slug à partir du titre
 
         return $this;
     }
@@ -101,6 +113,17 @@ class Picture
     {
         $this->slug = $slug;
 
+        return $this;
+    }
+
+    public function getFilePath(): ?string
+    {
+        return $this->filePath;
+    }
+
+    public function setFilePath(?string $filePath): static
+    {
+        $this->filePath = $filePath;
         return $this;
     }
 

@@ -11,16 +11,172 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\String\Slugger\SluggerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+
+// #[Route('/api/pictures')]
+// class PictureController extends AbstractController
+// {
+//     private string $uploadDir;
+
+//     public function __construct(
+//         private EntityManagerInterface $manager,
+//         private SerializerInterface $serializer
+//     ) {
+//         $this->uploadDir = __DIR__ . '/../../public/uploads/pictures/';
+//     }
+
+//     /**
+//      * 🆕 Ajouter une nouvelle image (upload fichier ou base64)
+//      */
+//     #[Route('/new', name: 'picture_new', methods: ['POST'])]
+//     public function new(
+//         Request $request,
+//         ValidatorInterface $validator,
+//         SluggerInterface $slugger
+//     ): JsonResponse {
+//         // Récupération des données depuis form-data
+//         $title = $request->get('title');
+//         $slug = $request->get('slug');
+//         $fileData = $request->get('fileData');  // Pour les images en base64
+//         $fileName = $request->get('fileName');
+//         $pictureFile = $request->files->get('picture'); // Récupérer le fichier image
+
+//         // Vérification des données
+//         if (!$title) {
+//             return new JsonResponse(
+//                 ['error' => 'Title is required'],
+//                 Response::HTTP_BAD_REQUEST
+//             );
+//         }
+//         if (!$slug) {
+//             return new JsonResponse(
+//                 ['error' => 'Slug is required'],
+//                 Response::HTTP_BAD_REQUEST
+//             );
+//         }
+//         if (!$pictureFile && empty($fileData)) {
+//             return new JsonResponse(
+//                 ['error' => 'No file data provided'],
+//                 Response::HTTP_BAD_REQUEST
+//             );
+//         }
+
+//         // Gestion de l'image
+//         // Utilisation d'un nom de fichier unique pour éviter les conflits
+//         $fileName = uniqid('', true);
+
+//         // Extensions autorisées
+//         $allowedExtensions = [
+//             'jpg',
+//             'jpeg',
+//             'png',
+//             'gif'
+//         ];
+//         // Limite de taille (5MB)
+//         // $maxFileSize = 5 * 1024 * 1024;
+
+//         if ($pictureFile) {
+//             // Si un fichier est téléchargé
+//             $extension = $pictureFile->guessExtension();
+
+//             // Vérification de l'extension du fichier
+//             if (!in_array(strtolower($extension), $allowedExtensions)) {
+//                 return new JsonResponse(
+//                     ['error' => 'Invalid file type. Allowed types are jpg, png, jpeg, gif.'],
+//                     Response::HTTP_BAD_REQUEST
+//                 );
+//             }
+
+//             // Vérification de la taille du fichier
+//             // if ($pictureFile->getSize() > $maxFileSize) {
+//             //     return new JsonResponse(
+//             //         ['error' => 'File size exceeds the limit of 5MB.'],
+//             //         Response::HTTP_BAD_REQUEST
+//             //     );
+//             // }
+
+//             // Générer un nom unique pour éviter les collisions
+//             $fileName .= '.' . $extension;
+
+//             // Déplacer le fichier dans le répertoire sécurisé
+//             $pictureFile->move(
+//                 $this->uploadDir,
+//                 $fileName
+//             );
+
+//             $fileContent = file_get_contents(
+//                 $this->uploadDir . '/' . $fileName
+//             );
+//         } else {
+//             // Si l'image est envoyée en base64
+//             if (base64_encode(base64_decode($fileData, true)) !== $fileData) {
+//                 return new JsonResponse(
+//                     ['error' => 'Invalid base64 data'],
+//                     Response::HTTP_BAD_REQUEST
+//                 );
+//             }
+
+//             // Ajouter un suffixe unique pour éviter les collisions
+//             $fileName .= '-' . uniqid();
+//             $fileContent = base64_decode($fileData);
+
+//             // Sauvegarder le fichier décodé dans le répertoire sécurisé
+//             file_put_contents(
+//                 $this->uploadDir . '/' . $fileName,
+//                 $fileContent
+//             );
+//         }
+
+//         // Générer l'URL du fichier
+//         $fileUrl = $request->getSchemeAndHttpHost() . '/uploads/pictures/' . $fileName;
+
+//         // Création de l'entité Picture
+//         $picture = new Picture();
+//         $picture->setFilePath($fileUrl);
+//         $picture->setImageData($fileContent);
+//         $picture->setImagePath($fileName);
+//         // Titre et slug (si nécessaire)
+//         $picture->setTitle($title, $slugger);
+//         // Assigner le slug fourni ou généré
+//         $picture->setSlug($slug);
+//         $picture->setCreatedAt(new \DateTimeImmutable());
+
+//         // Validation de l'entité
+//         $errors = $validator->validate($picture);
+//         if (count($errors) > 0) {
+//             return new JsonResponse(
+//                 ['error' => (string) $errors],
+//                 Response::HTTP_BAD_REQUEST
+//             );
+//         }
+
+//         // Persister l'entité et sauvegarder
+//         $this->manager->persist($picture);
+//         $this->manager->flush();
+
+//         return new JsonResponse(
+//             // ['message' => 'Picture added successfully'],
+//             // Response::HTTP_CREATED
+//             $this->serializer->serialize($picture, 'json'),
+//             Response::HTTP_CREATED,
+//             [],
+//             true
+//         );
+//     }
+
 
 #[Route('/api/pictures')]
 class PictureController extends AbstractController
 {
     private string $uploadDir;
 
-    public function __construct(private EntityManagerInterface $manager)
-    {
+    public function __construct(
+        private EntityManagerInterface $manager,
+        private SerializerInterface $serializer
+    ) {
+        // Définir le répertoire d'upload des images
         $this->uploadDir = __DIR__ . '/../../public/uploads/pictures/';
     }
 
@@ -71,8 +227,6 @@ class PictureController extends AbstractController
             'png',
             'gif'
         ];
-        // Limite de taille (5MB)
-        // $maxFileSize = 5 * 1024 * 1024;
 
         if ($pictureFile) {
             // Si un fichier est téléchargé
@@ -85,14 +239,6 @@ class PictureController extends AbstractController
                     Response::HTTP_BAD_REQUEST
                 );
             }
-
-            // Vérification de la taille du fichier
-            // if ($pictureFile->getSize() > $maxFileSize) {
-            //     return new JsonResponse(
-            //         ['error' => 'File size exceeds the limit of 5MB.'],
-            //         Response::HTTP_BAD_REQUEST
-            //     );
-            // }
 
             // Générer un nom unique pour éviter les collisions
             $fileName .= '.' . $extension;
@@ -129,14 +275,11 @@ class PictureController extends AbstractController
         // Générer l'URL du fichier
         $fileUrl = $request->getSchemeAndHttpHost() . '/uploads/pictures/' . $fileName;
 
-        // Création de l'entité Picture
+        // Créer une nouvelle entité Picture
         $picture = new Picture();
         $picture->setFilePath($fileUrl);
-        $picture->setImageData($fileContent);
         $picture->setImagePath($fileName);
-        // Titre et slug (si nécessaire)
-        $picture->setTitle($title, $slugger);
-        // Assigner le slug fourni ou généré
+        $picture->setTitle($title, $slugger);  // Titre et slug (si nécessaire)
         $picture->setSlug($slug);
         $picture->setCreatedAt(new \DateTimeImmutable());
 
@@ -153,11 +296,25 @@ class PictureController extends AbstractController
         $this->manager->persist($picture);
         $this->manager->flush();
 
+        // Sérialiser les données de l'image, sans inclure les données binaires (imageData)
+        $pictureData = [
+            'id' => $picture->getId(),
+            'filePath' => $picture->getFilePath(),
+            'imagePath' => $picture->getImagePath(),
+            'title' => $picture->getTitle(),
+            'slug' => $picture->getSlug(),
+            'createdAt' => $picture->getCreatedAt()->format('Y-m-d H:i:s'),
+        ];
+
+        // Retourner la réponse avec l'entité sérialisée en JSON
         return new JsonResponse(
-            ['message' => 'Picture added successfully'],
-            Response::HTTP_CREATED
+            $this->serializer->serialize($pictureData, 'json'),
+            Response::HTTP_CREATED,
+            [],
+            true // Le true indique que la réponse est déjà en format JSON
         );
     }
+
 
 
 

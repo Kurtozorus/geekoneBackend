@@ -18,9 +18,6 @@ class Picture
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column(type: Types::BLOB, nullable: true)]
-    private $imageData;
-
     #[ORM\Column(length: 255)]
     private ?string $imagePath = null;
 
@@ -35,9 +32,12 @@ class Picture
     #[ORM\Column(nullable: true, length: 32)]
     private ?string $slug;
 
-    #[Assert\NotBlank]
-    #[Assert\Url]
-    private ?string $filePath = null;
+    /**
+     * @ORM\Column(type="string")
+     * @Assert\NotBlank(groups={"Create"}) // Assurez-vous que ce groupe est appliqué uniquement lors de la création, pas lors de la mise à jour
+     */
+    private $filePath;
+
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
@@ -63,18 +63,6 @@ class Picture
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function getImageData()
-    {
-        return $this->imageData;
-    }
-
-    public function setImageData($imageData): static
-    {
-        $this->imageData = $imageData;
-
-        return $this;
     }
 
     public function getImagePath(): ?string

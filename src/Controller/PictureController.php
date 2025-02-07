@@ -12,6 +12,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -182,31 +184,81 @@ class PictureController extends AbstractController
     }
 
     #[Route('/{id}', name: 'picture_show', methods: ['GET'])]
-    public function show(int $id): JsonResponse
-    {
+    public function show(
+        int $id,
+        UrlGeneratorInterface $urlGenerator
+    ): JsonResponse|BinaryFileResponse {
+        // Récupérer l'image depuis la base de données
         $picture = $this->manager->getRepository(Picture::class)->find($id);
 
-        if (!$picture) {
+        // Vérification de l'existence de l'image
+        if (!$picture || !$picture->getImagePath()) {
             return new JsonResponse(
-                [
-                    'status' => 'error',
-                    'message' => 'Image not found'
-                ],
+                ['error' => 'Image not found'],
                 Response::HTTP_NOT_FOUND
             );
         }
 
+        // Construction du chemin absolu sécurisé du fichier image
+        $imagePath = realpath(
+            $this->uploadDir . DIRECTORY_SEPARATOR . $picture->getImagePath()
+        );
+
+        // Sécurisation contre les attaques de type Path Traversal
+        if (!$imagePath || strpos($imagePath, realpath($this->uploadDir)) !== 0) {
+            return new JsonResponse(
+                ['error' => 'Unauthorized access'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        // Vérifier si le fichier existe
+        if (!file_exists($imagePath) || !is_readable($imagePath)) {
+            return new JsonResponse(
+                ['error' => 'File not found on server'],
+                Response::HTTP_NOT_FOUND
+            );
+        }
+
+        // Générer l'URL de l'image dans le navigateur
+        $imageUrl = $urlGenerator->generate(
+            'picture_show',
+            [
+                'id' => $id,
+                'view' => 'image'
+            ],
+            UrlGeneratorInterface::ABSOLUTE_URL
+        );
+
+        // Retourner soit l'image dans la réponse (si demandé directement), soit les métadonnées
+        if (isset($_GET['view']) && $_GET['view'] === 'image') {
+            $response = new BinaryFileResponse($imagePath);
+            $response->headers->set(
+                'Content-Type',
+                mime_content_type(
+                    $imagePath
+                )
+            );
+            $response->setContentDisposition(
+                ResponseHeaderBag::DISPOSITION_INLINE,
+                basename(
+                    $imagePath
+                )
+            );
+            return $response;
+        }
+
+        // Si on ne demande pas l'image directement, renvoyer les métadonnées avec l'URL
         return new JsonResponse(
             [
                 'status' => 'success',
-                'image' => [
-                    'id' => $picture->getId(),
-                    'title' => $picture->getTitle(),
-                    'slug' => $picture->getSlug(),
-                    'filePath' => $picture->getFilePath(),
-                    'imagePath' => $picture->getImagePath(),
-                    'createdAt' => $picture->getCreatedAt()->format('Y-m-d H:i:s')
-                ]
+                'id' => $picture->getId(),
+                'title' => $picture->getTitle(),
+                'slug' => $picture->getSlug(),
+                'filePath' => $picture->getFilePath(),
+                'imagePath' => $picture->getImagePath(),
+                'imageUrl' => $imageUrl,  // Lien direct pour afficher l'image dans le navigateur
+                'createdAt' => $picture->getCreatedAt()->format('Y-m-d H:i:s'),
             ],
             Response::HTTP_OK
         );
@@ -235,109 +287,80 @@ class PictureController extends AbstractController
         ], Response::HTTP_OK);
     }
 
+
+
+
     #[Route('/{id}', name: 'picture_edit', methods: ['PUT'])]
     public function edit(
         int $id,
         Request $request,
-        ValidatorInterface $validator
+        ValidatorInterface $validator,
+        SluggerInterface $slugger
     ): JsonResponse {
         $picture = $this->manager->getRepository(Picture::class)->find($id);
 
         if (!$picture) {
-            return new JsonResponse(
-                [
-                    'status' => 'error',
-                    'message' => 'Picture not found'
-                ],
-                Response::HTTP_NOT_FOUND
-            );
+            return new JsonResponse(['error' => 'Image not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // Récupérer les informations envoyées
         $title = $request->get('title');
         $slug = $request->get('slug');
-        $file = $request->files->get('picture');
+        $fileData = $request->get('fileData');
+        $pictureFile = $request->files->get('picture');
 
-        // Mise à jour du titre et du slug
+        // Mettre à jour le titre et le slug
         if ($title) {
-            $picture->setTitle(
-                htmlspecialchars(
-                    $title,
-                    ENT_QUOTES,
-                    'UTF-8'
-                )
-            );
+            $picture->setTitle($title);
+            $picture->setSlug($slugger->slug($title)->lower());
         }
         if ($slug) {
-            $picture->setSlug(
-                htmlspecialchars(
-                    $slug,
-                    ENT_QUOTES,
-                    'UTF-8'
-                )
-            );
+            $picture->setSlug($slug);
         }
 
-        // Si un fichier image est envoyé, on le traite
-        if ($file) {
-            // Validation du fichier image (ici on suppose qu'on vérifie son type et sa taille, par exemple)
-            if (!$file->isValid()) {
-                return new JsonResponse(
-                    [
-                        'status' => 'error',
-                        'message' => 'File upload failed'
-                    ],
-                    Response::HTTP_BAD_REQUEST
-                );
-            }
+        // Si une nouvelle image est envoyée
+        if ($pictureFile) {
+            $newFileName = uniqid('', true) . '.' . $pictureFile->guessExtension();
+            $pictureFile->move($this->uploadDir, $newFileName);
 
-            // Générer un nom unique pour l'image et déplacer le fichier vers le répertoire de stockage
-            $newFilename = uniqid() . '.' . $file->guessExtension();
-            $file->move(
-                // Le répertoire où stocker les images
-                $this->getParameter('images_directory'),
-                $newFilename
-            );
-
-            // Mettre à jour le chemin de l'image dans l'entité
-            $picture->setFilePath($newFilename);  // Assurez-vous que votre entité Picture a une méthode setFilePath()
+            $picture->setFilePath('/uploads/pictures/' . $newFileName);
+            $picture->setImagePath($newFileName);
         }
 
-        // Validation des données de l'entité
+        // Mettre à jour la date de modification
+        $picture->setUpdatedAt(new \DateTimeImmutable());
+
+        // Valider avant d'enregistrer
         $errors = $validator->validate($picture);
         if (count($errors) > 0) {
-            return new JsonResponse(
-                [
-                    'status' => 'error',
-                    'message' => 'Validation failed',
-                    'validation_errors' => (string) $errors
-                ],
-                Response::HTTP_BAD_REQUEST
-            );
+            return new JsonResponse(['error' => (string) $errors], Response::HTTP_BAD_REQUEST);
         }
 
-        $picture->setUpdatedAt(new DateTimeImmutable());
-
-        // Sauvegarder les modifications dans la base de données
+        // Sauvegarde
         $this->manager->flush();
+        $this->manager->clear(); // Vide le cache local de Doctrine
 
-        // Retourner la réponse avec les informations mises à jour
-        return new JsonResponse(
-            [
-                'status' => 'success',
-                'message' => 'Image updated successfully',
-                'image' => [
-                    'id' => $picture->getId(),
-                    'title' => $picture->getTitle(),
-                    'slug' => $picture->getSlug(),
-                    'filePath' => $picture->getFilePath(),
-                    'imagePath' => $picture->getImagePath(),
-                    'updatedAt' => $picture->getupdatedAt()->format('Y-m-d H:i:s')
-                ]
-            ],
-            Response::HTTP_OK
-        );
+        $updatedPicture = $this->manager->getRepository(Picture::class)->find($id);
+        dd($updatedPicture);
+
+        $imageUrl = $request->getSchemeAndHttpHost() . '/uploads/pictures/' . $picture->getImagePath();
+
+        return new JsonResponse([
+            'status' => 'success',
+            'message' => 'Image updated successfully',
+            'image' => [
+                'id' => $picture->getId(),
+                'title' => $picture->getTitle(),
+                'slug' => $picture->getSlug(),
+                'filePath' => $picture->getFilePath(),
+                'imagePath' => $picture->getImagePath(),
+                'imageUrl' => $imageUrl,
+                'updatedAt' => $picture->getUpdatedAt()->format('Y-m-d H:i:s')
+            ]
+        ], Response::HTTP_OK);
     }
+
+
+
 
 
 

@@ -81,14 +81,9 @@ class Picture
         return $this->title;
     }
 
-    public function setTitle(string $title, SluggerInterface $slugger): static
+    public function setTitle(?string $title): static
     {
-        // S'assurer que le titre est encodé en UTF-8
-        $title = mb_convert_encoding($title, 'UTF-8', 'UTF-8');  // Normaliser l'encodage du titre
-
-        $this->title = $title;  // Définir le titre
-        $this->slug = $slugger->slug($title)->lower();  // Générer un slug à partir du titre
-
+        $this->title = $title;
         return $this;
     }
 

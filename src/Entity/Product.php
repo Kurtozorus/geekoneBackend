@@ -39,9 +39,11 @@ class Product
     private ?Picture $picture;
 
     #[ORM\Column]
+    #[Groups(['product:read'])]
     private ?\DateTimeImmutable $createdAt = null;
 
     #[ORM\Column(nullable: true)]
+    #[Groups(['product:read'])]
     private ?\DateTimeImmutable $updatedAt = null;
 
     #[ORM\OneToOne(mappedBy: 'product', cascade: ['persist', 'remove'])]
@@ -50,7 +52,7 @@ class Product
     /**
      * @var Collection<int, Category>
      */
-    #[ORM\ManyToMany(targetEntity: Category::class, inversedBy: 'products',cascade: ['persist'])]
+    #[ORM\ManyToMany(targetEntity: Category::class, inversedBy: 'products', cascade: ['persist'])]
     #[ORM\JoinTable(name: 'product_category')]
     #[Groups(['product:read'])]
     private Collection $categories;

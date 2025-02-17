@@ -44,37 +44,91 @@ final class ProductController extends AbstractController
             'products' => $productList
         ], Response::HTTP_OK);
     }
+
     #[Route(name: 'new', methods: ['POST'])]
-    public function new(Request $request, EntityManagerInterface $manager): JsonResponse
-    {
-        $product = $this->serializer->deserialize($request->getContent(), Product::class, 'json');
-        $product->setCreatedAt(new DateTimeImmutable());
-        if (isset($data['category'])) {
-            $category = $manager->getRepository(Category::class)->find($data['category']);
-            if ($category) {
-                $product->setCategory($category);
-            } else{
-                return new JsonResponse(['error' => 'Catégorie introuvable.'], Response::HTTP_NOT_FOUND);
+    public function new(
+        Request $request,
+        EntityManagerInterface $manager
+    ): JsonResponse {
+        // Vérifier si la requête contient du JSON valide
+        $data = json_decode(
+            $request->getContent(),
+            true
+        );
+
+        if (!$data) {
+            return new JsonResponse(
+                ['error' => 'JSON invalide.'],
+                Response::HTTP_BAD_REQUEST
+            );
+        }
+
+        // Désérialisation du produit
+        $product = $this->serializer->deserialize(
+            $request->getContent(),
+            Product::class,
+            'json'
+        );
+
+        // Gestion de la catégorie (ManyToMany)
+        if (isset($data['category']) && is_array($data['category'])) {
+            foreach ($data['category'] as $categoryId) {
+                $category = $manager->getRepository(Category::class)->find($categoryId);
+                if ($category) {
+                    $product->addCategory($category);
+                } else {
+                    return new JsonResponse(
+                        ['error' => "Catégorie ID $categoryId introuvable."],
+                        Response::HTTP_NOT_FOUND
+                    );
+                }
             }
         }
-        $this->manager->persist($product);
-        $this->manager->flush();
-        
-        $responseData = $this->serializer->serialize($product, 'json', ['groups' => 'product:read']);
+
+        // Ajout de la date de création
+        $product->setCreatedAt(new DateTimeImmutable());
+
+        // Persistance et sauvegarde en base de données
+        $manager->persist($product);
+        $manager->flush();
+
+        // Sérialisation de la réponse
+        $responseData = json_decode(
+            $this->serializer
+                ->serialize(
+                    $product,
+                    'json',
+                    ['groups' => 'product:read']
+                ),
+            true
+        ); // Convertir en tableau
+
+        // Supprimer updatedAt s'il est null
+        if (!isset($responseData['updatedAt'])) {
+            unset($responseData['updatedAt']);
+        }
+
+        // Génération de l'URL du nouveau produit
         $location = $this->urlGenerator->generate(
             'app_api_product_show',
             ['id' => $product->getId()],
-            UrlGeneratorInterface::ABSOLUTE_URL,
+            UrlGeneratorInterface::ABSOLUTE_URL
         );
-        return new JsonResponse($responseData, Response::HTTP_CREATED, ["location"=>$location], true);
+
+        return new JsonResponse(
+            $responseData,
+            Response::HTTP_CREATED,
+            ["Location" => $location]
+        );
     }
+
     #[Route('/{id}', name: 'show', methods: ['GET'])]
     public function show(int $id): JsonResponse
     {
         $product = $this->manager->getRepository(Product::class)->findOneBy(['id' => $id]);
 
         if ($product) {
-             $this->serializer->serialize($product, 'json', ['groups' => 'product:read']);
+            $this->serializer->serialize($product, 'json', ['groups' => 'product:read']);
             return new JsonResponse(
                 [
                     'product' => [
@@ -86,7 +140,8 @@ final class ProductController extends AbstractController
                         'picture' => $product->getPicture(),
                         'createdAt' => $product->getCreatedAt()->format("d-m-Y")
                     ],
-                ],JsonResponse::HTTP_CREATED,
+                ],
+                JsonResponse::HTTP_CREATED,
             );
         }
     }
@@ -95,67 +150,66 @@ final class ProductController extends AbstractController
         int $id,
         Request $request,
         EntityManagerInterface $manager
-        ): JsonResponse 
-        {
-            $product = $this->manager->getRepository(Product::class)->find($id);
-    
-    if (!$product) {
-        return new JsonResponse(['error' => 'Produit introuvable.'], Response::HTTP_NOT_FOUND);
-    }
+    ): JsonResponse {
+        $product = $this->manager->getRepository(Product::class)->find($id);
 
-    $data = json_decode($request->getContent(), true);
-    if (!$data) {
-        return new JsonResponse(['error' => 'Données invalides.'], Response::HTTP_BAD_REQUEST);
-    }
-
-    if (isset($data['title'])) {
-        $product->setTitle(htmlspecialchars($data['title'], ENT_QUOTES, 'UTF-8'));
-    }
-    if (isset($data['description'])) {
-        $product->setDescription(strip_tags($data['description']));
-    }
-    if (isset($data['price'])) {
-        $product->setPrice((float) $data['price']);
-    }
-    if (isset($data['availability'])) {
-        $product->setAvailability((bool) $data['availability']);
-    }
-
-    if (isset($data['category'])) {
-        $category = $this->manager->getRepository(Category::class)->find($data['category']);
-        if (!$category) {
-            return new JsonResponse(['error' => 'Catégorie introuvable.'], Response::HTTP_BAD_REQUEST);
+        if (!$product) {
+            return new JsonResponse(['error' => 'Produit introuvable.'], Response::HTTP_NOT_FOUND);
         }
-        $product->setCategory($category);
-    }
 
-    if (isset($data['picture'])) {
-        $picture = $this->manager->getRepository(Picture::class)->find($data['picture']);
-        if (!$picture) {
-            return new JsonResponse(['error' => 'Image introuvable.'], Response::HTTP_BAD_REQUEST);
+        $data = json_decode($request->getContent(), true);
+        if (!$data) {
+            return new JsonResponse(['error' => 'Données invalides.'], Response::HTTP_BAD_REQUEST);
         }
-        $product->setPicture($picture);
-    }
 
-    $product->setUpdatedAt(new \DateTimeImmutable());
+        if (isset($data['title'])) {
+            $product->setTitle(htmlspecialchars($data['title'], ENT_QUOTES, 'UTF-8'));
+        }
+        if (isset($data['description'])) {
+            $product->setDescription(strip_tags($data['description']));
+        }
+        if (isset($data['price'])) {
+            $product->setPrice((float) $data['price']);
+        }
+        if (isset($data['availability'])) {
+            $product->setAvailability((bool) $data['availability']);
+        }
 
-    $this->manager->flush();
+        if (isset($data['category'])) {
+            $category = $this->manager->getRepository(Category::class)->find($data['category']);
+            if (!$category) {
+                return new JsonResponse(['error' => 'Catégorie introuvable.'], Response::HTTP_BAD_REQUEST);
+            }
+            $product->setCategory($category);
+        }
 
-    return new JsonResponse([
-        'status' => 'success',
-        'message' => 'Produit modifié avec succès',
-        'product' => [
-            'id' => $product->getId(),
-            'title' => $product->getTitle(),
-            'description' => $product->getDescription(),
-            'price' => $product->getPrice(),
-            'availability' => $product->isAvailability(),
-            'category' => $product->getCategory() ? $product->getCategory()->getName() : null,
-            'picture' => $product->getPicture() ? $product->getPicture()->getId() : null,
-            'createdAt' => $product->getCreatedAt()->format("d-m-Y"),
-            'updatedAt' => $product->getUpdatedAt()->format("d-m-Y")
-        ]
-    ], Response::HTTP_OK);
+        if (isset($data['picture'])) {
+            $picture = $this->manager->getRepository(Picture::class)->find($data['picture']);
+            if (!$picture) {
+                return new JsonResponse(['error' => 'Image introuvable.'], Response::HTTP_BAD_REQUEST);
+            }
+            $product->setPicture($picture);
+        }
+
+        $product->setUpdatedAt(new \DateTimeImmutable());
+
+        $this->manager->flush();
+
+        return new JsonResponse([
+            'status' => 'success',
+            'message' => 'Produit modifié avec succès',
+            'product' => [
+                'id' => $product->getId(),
+                'title' => $product->getTitle(),
+                'description' => $product->getDescription(),
+                'price' => $product->getPrice(),
+                'availability' => $product->isAvailability(),
+                'category' => $product->getCategory() ? $product->getCategory()->getName() : null,
+                'picture' => $product->getPicture() ? $product->getPicture()->getId() : null,
+                'createdAt' => $product->getCreatedAt()->format("d-m-Y"),
+                'updatedAt' => $product->getUpdatedAt()->format("d-m-Y")
+            ]
+        ], Response::HTTP_OK);
 
         // if (!$product) {
         //     return new JsonResponse(
@@ -181,7 +235,7 @@ final class ProductController extends AbstractController
         //     $product->setAvailability($availability);
         // }
 
-        
+
         // $product->setUpdatedAt(new DateTimeImmutable());
         // $this->manager->flush();
 
@@ -190,7 +244,7 @@ final class ProductController extends AbstractController
         //     ['id' => $product->getId()],
         //      UrlGeneratorInterface::ABSOLUTE_URL
         // );
-        
+
         // return new JsonResponse(
         //         [
         //             'status' => 'success',
@@ -208,7 +262,7 @@ final class ProductController extends AbstractController
         //             ]
         //             ],JsonResponse::HTTP_OK,
         //     );
-        
+
         //Assigner une image au produit
         // if (isset($data['picture'])) {
         //     $picture = $manager->getRepository(Picture::class)->find($data['picture']);
@@ -256,20 +310,21 @@ final class ProductController extends AbstractController
     #[Route('/{id}', name: 'delete', methods: ['DELETE'])]
     public function delete(int $id): JsonResponse
     {
-        $product = $this->manager->getRepository(Product::class)->findOneBy(['id'=>$id]);
+        $product = $this->manager->getRepository(Product::class)->findOneBy(['id' => $id]);
 
         if (!$product) {
             return new JsonResponse(
                 [
                     'status' => 'error',
-                    'message' => 'Produit introuvable.'],
+                    'message' => 'Produit introuvable.'
+                ],
                 Response::HTTP_NOT_FOUND
             );
         }
-        
+
         $this->manager->remove($product);
         $this->manager->flush();
-        
+
         return new JsonResponse(
             [
                 'status' => 'success',

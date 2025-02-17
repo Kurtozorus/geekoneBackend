@@ -7,7 +7,9 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\String\Slugger\SluggerInterface;
 
 #[ORM\Entity(repositoryClass: PictureRepository::class)]
 class Picture
@@ -15,21 +17,29 @@ class Picture
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['product:read'])]
     private ?int $id = null;
-
-    #[Assert\NotNull]
-    #[ORM\Column(type: Types::BLOB)]
-    private $imageData = null;
 
     #[ORM\Column(length: 255)]
     private ?string $imagePath = null;
 
-    #[ORM\Column(length: 32)]
-    private ?string $title = null;
+    #[ORM\Column(nullable: true, length: 32)]
+    private ?string $title;
 
-    #[Assert\NotBlank]
-    #[ORM\Column(length: 64)]
-    private ?string $slug = null;
+    #[Assert\NotBlank(message: "Slug cannot be empty.")]
+    #[Assert\Regex(
+        pattern: "/^[a-z0-9-]+$/",
+        message: "Slug must contain only lowercase letters, numbers, and hyphens."
+    )]
+    #[ORM\Column(nullable: true, length: 32)]
+    private ?string $slug;
+
+    /**
+     * @ORM\Column(type="string")
+     * @Assert\NotBlank(groups={"Create"}) // Assurez-vous que ce groupe est appliqué uniquement lors de la création, pas lors de la mise à jour
+     */
+    private $filePath;
+
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
@@ -57,27 +67,15 @@ class Picture
         return $this->id;
     }
 
-    public function getImageData()
-    {
-        return $this->imageData;
-    }
-
-    public function setImageData($imageData): static
-    {
-        $this->imageData = $imageData;
-
-        return $this;
-    }
-
     public function getImagePath(): ?string
     {
         return $this->imagePath;
     }
-    
+
     public function setImagePath(?string $imagePath): static
     {
         $this->imagePath = $imagePath;
-    
+
         return $this;
     }
     public function getTitle(): ?string
@@ -85,10 +83,9 @@ class Picture
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
-
         return $this;
     }
 
@@ -101,6 +98,17 @@ class Picture
     {
         $this->slug = $slug;
 
+        return $this;
+    }
+
+    public function getFilePath(): ?string
+    {
+        return $this->filePath;
+    }
+
+    public function setFilePath(?string $filePath): static
+    {
+        $this->filePath = $filePath;
         return $this;
     }
 

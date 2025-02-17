@@ -3,7 +3,10 @@
 namespace App\Entity;
 
 use App\Repository\ProductRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Groups;
 
 #[ORM\Entity(repositoryClass: ProductRepository::class)]
 class Product
@@ -11,23 +14,29 @@ class Product
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['product:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 32)]
+    #[Groups(['product:read'])]
     private ?string $title = null;
 
     #[ORM\Column(length: 255)]
+    #[Groups(['product:read'])]
     private ?string $description = null;
 
     #[ORM\Column]
+    #[Groups(['product:read'])]
     private ?float $price = null;
 
     #[ORM\Column]
+    #[Groups(['product:read'])]
     private ?bool $availability = null;
 
     #[ORM\ManyToOne(inversedBy: 'products')]
-    #[ORM\JoinColumn(nullable: false)]
-    private ?Picture $picture = null;
+    #[ORM\JoinColumn(nullable: true)]
+    #[Groups(['product:read'])]
+    private ?Picture $picture;
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
@@ -35,12 +44,21 @@ class Product
     #[ORM\Column(nullable: true)]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    #[ORM\OneToOne(inversedBy: 'product', cascade: ['persist', 'remove'])]
-    #[ORM\JoinColumn(nullable: false)]
-    private ?Category $category = null;
-
     #[ORM\OneToOne(mappedBy: 'product', cascade: ['persist', 'remove'])]
     private ?Booking $booking = null;
+
+    /**
+     * @var Collection<int, Category>
+     */
+    #[ORM\ManyToMany(targetEntity: Category::class, inversedBy: 'products',cascade: ['persist'])]
+    #[ORM\JoinTable(name: 'product_category')]
+    #[Groups(['product:read'])]
+    private Collection $categories;
+
+    public function __construct()
+    {
+        $this->categories = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
@@ -131,18 +149,6 @@ class Product
         return $this;
     }
 
-    public function getCategory(): ?Category
-    {
-        return $this->category;
-    }
-
-    public function setCategory(Category $category): static
-    {
-        $this->category = $category;
-
-        return $this;
-    }
-
     public function getBooking(): ?Booking
     {
         return $this->booking;
@@ -156,6 +162,30 @@ class Product
         }
 
         $this->booking = $booking;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Category>
+     */
+    public function getCategories(): Collection
+    {
+        return $this->categories;
+    }
+
+    public function addCategory(Category $category): static
+    {
+        if (!$this->categories->contains($category)) {
+            $this->categories->add($category);
+        }
+
+        return $this;
+    }
+
+    public function removeCategory(Category $category): static
+    {
+        $this->categories->removeElement($category);
 
         return $this;
     }

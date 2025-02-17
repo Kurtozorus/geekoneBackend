@@ -3,7 +3,6 @@
 namespace App\Controller;
 
 use App\Entity\Picture;
-use App\Repository\PictureRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -11,45 +10,63 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\KernelInterface;
-use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\String\Slugger\SluggerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
-use App\Service\PictureUploaderService;
+use Symfony\Component\HttpKernel\KernelInterface;
 
-#[Route('api/picture', name: 'app_api_picture_')]
-final class PictureController extends AbstractController
+#[Route('/api/pictures')]
+class PictureController extends AbstractController
 {
     private string $uploadDir;
-    private KernelInterface $kernel;
+
     public function __construct(
         private EntityManagerInterface $manager,
-        private PictureRepository $repository,
         private SerializerInterface $serializer,
-        private UrlGeneratorInterface $urlGenerator,
-        private PictureUploaderService $pictureUploader,
-        private ValidatorInterface $validator, // Injection du validateur
-        KernelInterface $kernel,
+        private ValidatorInterface $validator,
+        private SluggerInterface $slugger,
+        private KernelInterface $kernel // Injection du kernel pour obtenir le répertoire
     ) {
-        $this->kernel = $kernel;
-        $this->uploadDir = $kernel->getProjectDir() . '/public/uploads/pictures/';
+        // Définition du répertoire d'upload des images
+        $this->uploadDir = $this->kernel->getProjectDir() . '/public/uploads/pictures/';
     }
-    
-    #[Route(name: 'new', methods: ['POST'])]
-    public function new(Request $request): JsonResponse
-    {
-        $uploadedFile = $request->files->get('picture'); // Récupération du fichier envoyé
 
-        // Vérifier l'extension et le type MIME
-        $allowedExtensions = [
-            'jpg',
-            'jpeg',
-            'png',
-            'gif',
-            'webp'
-        ];
+    // Ajouter une image
+    #[Route(name: 'new', methods: ['POST'])]
+    public function new(
+        Request $request,
+        ValidatorInterface $validator,
+        SluggerInterface $slugger,
+        CsrfTokenManagerInterface $csrfTokenManager
+    ): JsonResponse {
+
+        //Vérification du token CSRF pour prévenir les attaques CSRF
+        // $submittedToken = $request->get('csrf_token');
+        // if (!$csrfTokenManager->isTokenValid(new CsrfToken('upload', $submittedToken))) {
+        //     return new JsonResponse(['error' => 'Invalid CSRF token'], Response::HTTP_FORBIDDEN);
+        // }
+
+        //Récupération des données envoyées par le client
+        $title = $request->get('title');
+        $slug = $request->get('slug');
+        $fileData = $request->get('fileData'); // Image en Base64
+        $pictureFile = $request->files->get('picture'); // Image envoyée en fichier
+
+        //Vérification des champs obligatoires
+        if (!$title || !$slug || (!$pictureFile && empty($fileData))) {
+            return new JsonResponse(
+                ['error' => 'Champs obligatoires manquants'],
+                Response::HTTP_BAD_REQUEST
+            );
+        }
+
+        //Définition des types MIME autorisés
         $allowedMimeTypes = [
             'image/jpeg',
             'image/jpg',
@@ -57,217 +74,401 @@ final class PictureController extends AbstractController
             'image/gif',
             'image/webp'
         ];
-        // $fileExtension = strtolower($uploadedFile->getClientOriginalExtension());
-        // $mimeType = $uploadedFile->getMimeType();
+        $maxSize = 5 * 1024 * 1024; // 5MB
 
-        // if (!in_array($fileExtension, $allowedExtensions) || !in_array($mimeType, $allowedMimeTypes)) {
-        //     return new JsonResponse(
-        //         ['error' => 'Invalid file type'],
-        //         Response::HTTP_BAD_REQUEST
-        //     );
-        // }
-        // $fileExtension = strtolower($uploadedFile->getClientOriginalExtension());
-        // $mimeType = $uploadedFile->getMimeType();
+        //Génération d'un nom de fichier unique
+        $fileName = uniqid('', true);
 
-        // if (!in_array($fileExtension, $allowedExtensions) || !in_array($mimeType, $allowedMimeTypes)) {
-        //     return new JsonResponse(
-        //         ['error' => 'Invalid file type'],
-        //         Response::HTTP_BAD_REQUEST
-        //     );
-        // }
-        if ($uploadedFile) {
-            $fileName = uniqid() . '.' . $uploadedFile->guessExtension();
-
-            try {
-                $uploadedFile->move($this->uploadDir, $fileName);
-            } catch (FileException $e) {
-                return new JsonResponse(['error' => 'File upload failed'], Response::HTTP_INTERNAL_SERVER_ERROR);
+        if ($pictureFile) {
+            //Vérification du type MIME du fichier
+            $mimeType = $pictureFile->getMimeType();
+            if (!in_array($mimeType, $allowedMimeTypes)) {
+                return new JsonResponse(
+                    ['error' => 'Type de fichier invalide'],
+                    Response::HTTP_BAD_REQUEST
+                );
             }
+
+            //Vérification de la taille du fichier
+            if ($pictureFile->getSize() > $maxSize) {
+                return new JsonResponse(
+                    ['error' => 'Fichier trop grand'],
+                    Response::HTTP_BAD_REQUEST
+                );
+            }
+
+            //Récupération et ajout de l'extension au nom du fichier
+            $extension = $pictureFile->guessExtension();
+            $fileName .= '.' . $extension;
+
+            //Déplacement du fichier vers un dossier sécurisé (hors de l'accès direct du public)
+            $pictureFile->move($this->uploadDir, $fileName);
         } else {
-            // Sinon, vérifier si c'est une requête JSON avec base64
-            $data = json_decode($request->getContent(), true);
-
-            if (!isset($data['fileName']) || !isset($data['fileData'])) {
-                return new JsonResponse(['error' => 'Invalid JSON data'], Response::HTTP_BAD_REQUEST);
+            //Vérification et décodage des données Base64
+            $fileContent = base64_decode($fileData, true);
+            if (!$fileContent) {
+                return new JsonResponse(
+                    ['error' => 'Données Base64 invalides'],
+                    Response::HTTP_BAD_REQUEST
+                );
             }
 
-            $fileName = uniqid() . '-' . $data['fileName'];
-            $filePath = $this->uploadDir . $fileName;
-
-            // Convertir base64 en fichier réel
-            $decodedData = base64_decode($data['fileData']);
-            if ($decodedData === false) {
-                return new JsonResponse(['error' => 'Invalid base64 data'], Response::HTTP_BAD_REQUEST);
+            //Vérification du type MIME après décodage
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($fileContent);
+            if (!in_array($mimeType, $allowedMimeTypes)) {
+                return new JsonResponse(
+                    ['error' => 'Type de fichier base64 invalide'],
+                    Response::HTTP_BAD_REQUEST
+                );
             }
 
-            file_put_contents($filePath, $decodedData);
+            //Génération du nom de fichier avec une extension sécurisée
+            // $fileName .= '.jpg'; // On force l'extension jpg pour éviter l'exécution de scripts malveillants
+            // file_put_contents(
+            //     $this->uploadDir . '/' . $fileName,
+            //     $fileContent
+            // );
         }
+
+        //Génération d'une URL sécurisée pour l'accès à l'image
+        $fileUrl = $request->getSchemeAndHttpHost() . '/uploads/pictures/' . $fileName;
+
+        //Création d'une entité Picture et assignation des données
         $picture = new Picture();
+        $picture->setFilePath($fileUrl);
+        $picture->setImagePath($fileName);
+        //Protection contre XSS
+        $picture->setTitle(
+            htmlspecialchars(
+                $title,
+                ENT_QUOTES,
+                'UTF-8'
+            ),
+            $slugger
+        );
+        //Protection contre XSS
+        $picture->setSlug(
+            htmlspecialchars(
+                $slug,
+                ENT_QUOTES,
+                'UTF-8'
+            )
+        );
 
-        // Créer une nouvelle entité Image
-        $picture->setImagePath('/uploads/pictures/' . $fileName);
         $picture->setCreatedAt(new \DateTimeImmutable());
-        $picture->setUpdatedAt(new \DateTimeImmutable());
 
-        // Sauvegarde dans la base de données
+        //Validation des données de l'entité avant de l'enregistrer
+        $errors = $validator->validate($picture);
+        if (count($errors) > 0) {
+            return new JsonResponse(
+                ['error' => (string) $errors],
+                Response::HTTP_BAD_REQUEST
+            );
+        }
+
+        //Sauvegarde en base de données
         $this->manager->persist($picture);
         $this->manager->flush();
 
-        // Retourner une réponse
+        //Réponse JSON avec un message de succès
         return new JsonResponse(
-            $this->serializer->serialize($picture, 'json'),
-            Response::HTTP_CREATED,
-            [],
-            true
+            [
+                'status' => 'success',
+                'message' => 'Image uploaded avec succes',
+                'image' => [
+                    'id' => $picture->getId(),
+                    'title' => $picture->getTitle(),
+                    'slug' => $picture->getSlug(),
+                    'filePath' => $picture->getFilePath(),
+                    'imagePath' => $picture->getImagePath(),
+                    'createdAt' => $picture->getCreatedAt()->format("d-m-Y")
+                ]
+            ],
+            Response::HTTP_CREATED
         );
     }
-    #[Route('/{id}', name: 'show', methods: 'GET')]
-    public function show(int $id): BinaryFileResponse
-    {
-        $picture = $this->repository->findOneBy(['id' => $id]);
+
+    //Show : Récupérer l'images par son ID
+    #[Route('/{id}', name: 'picture_show', methods: ['GET'])]
+    public function show(
+        int $id,
+        Request $request,
+        UrlGeneratorInterface $urlGenerator
+    ): JsonResponse|BinaryFileResponse {
+        // Récupérer l'image depuis la base de données
+        $picture = $this->manager->getRepository(Picture::class)->find($id);
+
         // Vérification de l'existence de l'image
-        if (!$picture) {
-            throw $this->createNotFoundException('Image introuvable');
-        }
-
-        // Chemin absolu du fichier sur le serveur
-        $imagePath = $this->getParameter('kernel.project_dir') . '/public' . $picture->getFilePath();
-
-        // Vérification de l'existence du fichier
-        if (!file_exists($imagePath)) {
-            throw $this->createNotFoundException('Dossier introuvable');
-        }
-
-        // Retourner directement l'image en réponse HTTP
-        return new BinaryFileResponse($imagePath);
-    }
-
-    #[Route('/{id}', name: 'edit', methods: ['POST'])]
-    public function edit(int $id, Request $request): Response
-    {
-        // Récupération de l'image en base de données
-        $image = $this->repository->find($id);
-
-        if (!$image) {
+        if (!$picture || !$picture->getImagePath()) {
             return new JsonResponse(
-                ['error' => 'Image not found'],
+                ['error' => 'Image introuvable'],
                 Response::HTTP_NOT_FOUND
             );
         }
 
-        // Récupérer le fichier envoyé
-        $uploadedFile = $request->files->get('image');
-
-        if (!$uploadedFile) {
-            return new JsonResponse(
-                ['error' => 'No file uploaded'],
-                Response::HTTP_BAD_REQUEST
-            );
-        }
-
-        // Vérifier l'extension et le type MIME
-        $allowedExtensions = [
-            'jpg',
-            'jpeg',
-            'png',
-            'gif',
-            'webp'
-        ];
-        $allowedMimeTypes = [
-            'image/jpeg',
-            'image/png',
-            'image/gif',
-            'image/webp'
-        ];
-
-        $fileExtension = strtolower($uploadedFile->getClientOriginalExtension());
-        $mimeType = $uploadedFile->getMimeType();
-
-        if (!in_array($fileExtension, $allowedExtensions) || !in_array($mimeType, $allowedMimeTypes)) {
-            return new JsonResponse(
-                ['error' => 'Invalid file type'],
-                Response::HTTP_BAD_REQUEST
-            );
-        }
-
-        // Supprimer l'ancien fichier s'il existe
-        $oldFilePath = $this->getParameter('kernel.project_dir') . '/public' . $image->getFilePath();
-        if (file_exists($oldFilePath)) {
-            unlink($oldFilePath);
-        }
-
-        // Générer un nouveau nom de fichier
-        $fileName = uniqid() . '-' . preg_replace(
-            '/[^a-zA-Z0-9\._-]/',
-            '',
-            $uploadedFile->getClientOriginalName()
+        // Construction du chemin absolu sécurisé du fichier image
+        $imagePath = realpath(
+            $this->uploadDir . DIRECTORY_SEPARATOR . $picture->getImagePath()
         );
 
-        // Déplacer le fichier vers le répertoire d'upload
-        try {
+        // Sécurisation contre les attaques de type Path Traversal
+        if (!$imagePath || strpos($imagePath, realpath($this->uploadDir)) !== 0) {
+            return new JsonResponse(
+                ['error' => 'Acces refusé !'],
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        // Vérifier si le fichier existe
+        if (!file_exists($imagePath) || !is_readable($imagePath)) {
+            return new JsonResponse(
+                ['error' => 'Fichier introuvable'],
+                Response::HTTP_NOT_FOUND
+            );
+        }
+
+        // Générer l'URL de l'image dans le navigateur
+        $imageUrl = $urlGenerator->generate(
+            'picture_show',
+            [
+                'id' => $id,
+                'view' => 'image'
+            ],
+            UrlGeneratorInterface::ABSOLUTE_URL
+        );
+
+        // Retourner soit l'image dans la réponse (si demandé directement), soit les métadonnées
+        if ($request->query->get('view') === 'image') {
+            $response = new BinaryFileResponse($imagePath);
+            $response->headers->set(
+                'Content-Type',
+                mime_content_type(
+                    $imagePath
+                )
+            );
+            $response->setContentDisposition(
+                ResponseHeaderBag::DISPOSITION_INLINE,
+                basename(
+                    $imagePath
+                )
+            );
+            return $response;
+        }
+
+        // Si on ne demande pas l'image directement, renvoyer les métadonnées avec l'URL
+        return new JsonResponse(
+            [
+                'status' => 'success',
+                'id' => $picture->getId(),
+                'title' => $picture->getTitle(),
+                'slug' => $picture->getSlug(),
+                'filePath' => $picture->getFilePath(),
+                'imagePath' => $picture->getImagePath(),
+                'imageUrl' => $imageUrl,
+                'createdAt' => $picture->getCreatedAt()->format("d-m-Y"),
+            ],
+            Response::HTTP_OK
+        );
+    }
+
+    //Lecture (GET) : Récupérer toutes les images
+    #[Route('/', name: 'picture_index', methods: ['GET'])]
+    public function index(): JsonResponse
+    {
+        $pictures = $this->manager->getRepository(Picture::class)->findAll();
+
+        $imageList = array_map(function (Picture $picture) {
+            return [
+                'id' => $picture->getId(),
+                'title' => $picture->getTitle(),
+                'slug' => $picture->getSlug(),
+                'filePath' => $picture->getFilePath(),
+                'imagePath' => $picture->getImagePath(),
+                'createdAt' => $picture->getCreatedAt()->format("d-m-Y")
+            ];
+        }, $pictures);
+
+        return new JsonResponse([
+            'status' => 'success',
+            'images' => $imageList
+        ], Response::HTTP_OK);
+    }
+
+    //Modifier une image
+    #[Route('/{id}', name: 'edit', methods: ['POST'])]
+    public function edit(
+        int $id,
+        Request $request,
+        UrlGeneratorInterface $urlGenerator
+    ): Response {
+        // Récupérer l'image depuis la base de données
+        $picture = $this->manager->getRepository(Picture::class)->find($id);
+
+        if (!$picture) {
+            return new JsonResponse(
+                ['error' => 'Image introuvable'],
+                Response::HTTP_NOT_FOUND
+            );
+        }
+
+        // Récupérer et mettre à jour le titre et le slug (s'ils sont fournis)
+        $title = $request->request->get('title');
+        $slug = $request->request->get('slug');
+
+        if ($title) {
+            $picture->setTitle($title);
+        }
+        if ($slug) {
+            $picture->setSlug($slug);
+        }
+
+        // Récupérer le fichier envoyé
+        $uploadedFile = $request->files->get('picture');
+
+        // Vérification qu'au moins un champ est fourni
+        if (!$title && !$slug && !$uploadedFile) {
+            return new JsonResponse(
+                ['error' => 'Aucun changement fourni'],
+                Response::HTTP_BAD_REQUEST
+            );
+        }
+
+        if ($uploadedFile) {
+            // Vérifier l'extension et le type MIME
+            $allowedExtensions = [
+                'jpg',
+                'jpeg',
+                'png',
+                'gif',
+                'webp'
+            ];
+            $allowedMimeTypes = [
+                'image/jpeg',
+                'image/png',
+                'image/gif',
+                'image/webp'
+            ];
+
+            $fileExtension = strtolower($uploadedFile->getClientOriginalExtension());
+            $mimeType = $uploadedFile->getMimeType();
+
+            if (!in_array($fileExtension, $allowedExtensions) || !in_array($mimeType, $allowedMimeTypes)) {
+                return new JsonResponse(
+                    ['error' => 'Type de fichier invalide'],
+                    Response::HTTP_BAD_REQUEST
+                );
+            }
+
+            // Supprimer l'ancien fichier s'il existe
+            $oldFilePath = $this->uploadDir . $picture->getImagePath();
+            if (file_exists($oldFilePath) && is_file($oldFilePath)) {
+                unlink($oldFilePath);
+            }
+
+            // Générer un nouveau nom de fichier
+            $fileName = uniqid() . '-' . preg_replace(
+                '/[^a-zA-Z0-9\._-]/',
+                '',
+                $uploadedFile->getClientOriginalName()
+            );
+
+            // Vérification et création du dossier d'upload si nécessaire
             if (!is_dir($this->uploadDir) && !mkdir($this->uploadDir, 0775, true)) {
                 return new JsonResponse(
-                    ['error' => 'Failed to create upload directory'],
+                    ['error' => 'Échec de la création du répertoire de téléchargement'],
                     Response::HTTP_INTERNAL_SERVER_ERROR
                 );
             }
-            $uploadedFile->move($this->uploadDir, $fileName);
-        } catch (FileException $e) {
-            return new JsonResponse(
-                ['error' => 'File upload failed'],
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            );
+
+            // Déplacement du fichier
+            try {
+                $uploadedFile->move($this->uploadDir, $fileName);
+            } catch (FileException $e) {
+                return new JsonResponse(
+                    ['error' => 'Échec du téléchargement du fichier'],
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                );
+            }
+
+            // Mise à jour de l'image
+            $picture->setFilePath('/uploads/pictures/' . $fileName);
+            $picture->setImagePath($fileName);
         }
 
-        // Mettre à jour l'image dans la base de données
-        $image->setFilePath('/uploads/images/' . $fileName);
-        $image->setUpdatedAt(new DateTimeImmutable());
+        // Mettre à jour la date de modification
+        $picture->setUpdatedAt(new DateTimeImmutable());
 
         $this->manager->flush();
 
-        // Chemin absolu du fichier
-        $imagePath = $this->getParameter('kernel.project_dir') . '/public' . $image->getFilePath();
+        // Chemin absolu du fichier (corrigé)
+        $imagePath = $this->getParameter('kernel.project_dir') . '/public' . $picture->getFilePath();
 
         // Vérification de l'existence du fichier
         if (!file_exists($imagePath)) {
             return new JsonResponse(
-                ['error' => 'File not found after upload'],
+                ['error' => 'Fichier non trouvé après téléchargement'],
                 Response::HTTP_INTERNAL_SERVER_ERROR
             );
         }
 
-        // Retourner une réponse de l'image mise à jour
+        // Générer l'URL de l'image dans le navigateur
+        $imageUrl = $urlGenerator->generate(
+            'picture_show',
+            ['id' => $id, 'view' => 'image'],
+            UrlGeneratorInterface::ABSOLUTE_URL
+        );
+
+        // Retourner l'image si demandée en tant qu'affichage
+        if ($request->query->get('view') === 'image') {
+            $response = new BinaryFileResponse($imagePath);
+            $response->headers->set('Content-Type', mime_content_type($imagePath));
+            $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, basename($imagePath));
+            return $response;
+        }
+
         return new JsonResponse([
-            'id' => $image->getId(),
-            'filePath' => $image->getFilePath(), // URL relative de l'image
-            'updatedAt' => $image->getUpdatedAt()->format('Y-m-d H:i:s'),
-            'message' => 'Image updated successfully'
+            'status' => 'success',
+            'id' => $picture->getId(),
+            'title' => $picture->getTitle(),
+            'slug' => $picture->getSlug(),
+            'filePath' => $picture->getFilePath(),
+            'imageUrl' => $imageUrl,
+            'createdAt' => $picture->getCreatedAt()->format("d-m-Y H:i:s"),
+            'updatedAt' => $picture->getUpdatedAt()->format("d-m-Y H:i:s")
         ], Response::HTTP_OK);
     }
 
-    //Supprimer une image
-    #[Route('/{id}', name: 'delete', methods: ['DELETE'])]
+    #[Route('/{id}', name: 'picture_delete', methods: ['DELETE'])]
     public function delete(int $id): JsonResponse
     {
-        // Récupérer l'image depuis la base de données
-        $image = $this->repository->find($id);
+        $picture = $this->manager->getRepository(Picture::class)->find($id);
 
-        if (!$image) {
-            return new JsonResponse(['error' => 'Image not found'], Response::HTTP_NOT_FOUND);
+        if (!$picture) {
+            return new JsonResponse(
+                [
+                    'status' => 'error',
+                    'message' => 'Image introuvable'
+                ],
+                Response::HTTP_NOT_FOUND
+            );
         }
 
-        // Construire le chemin absolu du fichier
-        $filePath = $this->getParameter('kernel.project_dir') . '/public' . $image->getFilePath();
-
-        // Vérifier si le fichier existe et le supprimer
-        if (file_exists($filePath)) {
+        //Supprimer le fichier du serveur
+        $filePath = $this->uploadDir . '/' . $picture->getImagePath();
+        if (file_exists($filePath) && is_file($filePath)) {
             unlink($filePath);
         }
 
-        // Supprimer l'image de la base de données
-        $this->manager->remove($image);
+        $this->manager->remove($picture);
         $this->manager->flush();
 
-        return new JsonResponse(['message' => 'Image deleted successfully'], Response::HTTP_OK);
+        return new JsonResponse(
+            [
+                'status' => 'success',
+                'message' => 'Image supprimée avec succès'
+            ],
+            Response::HTTP_NO_CONTENT
+        );
     }
 }

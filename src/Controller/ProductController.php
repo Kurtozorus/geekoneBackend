@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\Category;
+use App\Entity\Picture;
 use App\Entity\Product;
 use App\Repository\ProductRepository;
 use DateTimeImmutable;
@@ -84,6 +85,19 @@ final class ProductController extends AbstractController
                 }
             }
         }
+        if (isset($data['picture']) && is_array($data['picture'])) {
+            foreach ($data['picture'] as $pictureId) {
+                $picture = $manager->getRepository(Picture::class)->find($pictureId);
+                if ($picture) {
+                    $product->setPicture($picture);
+                } else {
+                    return new JsonResponse(
+                        ['error' => "Image ID $pictureId introuvable."],
+                        Response::HTTP_NOT_FOUND
+                    );
+                }
+            }
+        }
 
         // Ajout de la date de création
         $product->setCreatedAt(new DateTimeImmutable());
@@ -129,19 +143,32 @@ final class ProductController extends AbstractController
 
         if ($product) {
             $this->serializer->serialize($product, 'json', ['groups' => 'product:read']);
+            $responseData = json_decode(
+                $this->serializer
+                    ->serialize(
+                        $product,
+                        'json',
+                        ['groups' => 'product:read']
+                    ),
+                true
+            ); // Convertir en tableau
+
+            // Supprimer updatedAt s'il est null
+            if (!isset($responseData['updatedAt'])) {
+                unset($responseData['updatedAt']);
+            }
+
+            // Génération de l'URL du nouveau produit
+            $location = $this->urlGenerator->generate(
+                'app_api_product_show',
+                ['id' => $product->getId()],
+                UrlGeneratorInterface::ABSOLUTE_URL
+            );
+
             return new JsonResponse(
-                [
-                    'product' => [
-                        'id' => $product->getId(),
-                        'title' => $product->getTitle(),
-                        'description' => $product->getDescription(),
-                        'price' => $product->getPrice(),
-                        'availability' => $product->isAvailability(),
-                        'picture' => $product->getPicture(),
-                        'createdAt' => $product->getCreatedAt()->format("d-m-Y")
-                    ],
-                ],
-                JsonResponse::HTTP_CREATED,
+                $responseData,
+                Response::HTTP_OK,
+                ["Location" => $location]
             );
         }
     }

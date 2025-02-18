@@ -171,9 +171,9 @@ class Product
     /**
      * @return Collection<int, Category>
      */
-    public function getCategories(): Collection
+    public function getCategories(): array
     {
-        return $this->categories;
+        return $this->categories->getValues(); // Convertit la collection en un vrai tableau
     }
 
     public function addCategory(Category $category): static

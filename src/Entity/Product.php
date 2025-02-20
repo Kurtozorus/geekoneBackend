@@ -18,7 +18,7 @@ class Product
     private ?int $id = null;
 
     #[ORM\Column(length: 32)]
-    #[Groups(['product:read'])]
+    #[Groups(['product:read', 'booking:read'])]
     private ?string $title = null;
 
     #[ORM\Column(length: 255)]
@@ -26,16 +26,16 @@ class Product
     private ?string $description = null;
 
     #[ORM\Column]
-    #[Groups(['product:read'])]
+    #[Groups(['product:read', 'booking:read'])]
     private ?float $price = null;
 
     #[ORM\Column]
-    #[Groups(['product:read'])]
+    #[Groups(['product:read', 'booking:read'])]
     private ?bool $availability = null;
 
     #[ORM\ManyToOne(inversedBy: 'products')]
     #[ORM\JoinColumn(nullable: true)]
-    #[Groups(['product:read'])]
+    #[Groups(['product:read', 'booking:read'])]
     private ?Picture $picture;
 
     #[ORM\Column]
@@ -46,7 +46,8 @@ class Product
     #[Groups(['product:read'])]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    #[ORM\OneToOne(mappedBy: 'product', cascade: ['persist', 'remove'])]
+    #[ORM\ManyToOne(inversedBy: 'products')]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Booking $booking = null;
 
     /**
@@ -112,6 +113,10 @@ class Product
     {
         $this->availability = $availability;
 
+        if ($this->booking) {
+            $this->booking->updateStatus(); // Met à jour le statut de la réservation
+        }
+
         return $this;
     }
 
@@ -156,15 +161,9 @@ class Product
         return $this->booking;
     }
 
-    public function setBooking(Booking $booking): static
+    public function setBooking(?Booking $booking): self
     {
-        // set the owning side of the relation if necessary
-        if ($booking->getProduct() !== $this) {
-            $booking->setProduct($this);
-        }
-
         $this->booking = $booking;
-
         return $this;
     }
 

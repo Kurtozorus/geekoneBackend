@@ -3,7 +3,10 @@
 namespace App\Entity;
 
 use App\Repository\BookingRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Groups;
 
 #[ORM\Entity(repositoryClass: BookingRepository::class)]
 class Booking
@@ -11,39 +14,59 @@ class Booking
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['booking:read'])]
     private ?int $id = null;
 
     #[ORM\Column]
-    private ?int $quandtite = null;
+    #[Groups(['booking:read'])]
+    private ?int $quantite = null;
 
     #[ORM\Column(length: 32)]
+    #[Groups(['booking:read'])]
     private ?string $status = null;
 
     #[ORM\Column]
+    #[Groups(['booking:read'])]
     private ?\DateTimeImmutable $createdAt = null;
 
     #[ORM\Column(nullable: true)]
+    #[Groups(['booking:read'])]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    #[ORM\OneToOne(inversedBy: 'booking', cascade: ['persist', 'remove'])]
-    #[ORM\JoinColumn(nullable: false)]
-    private ?Product $product = null;
+    #[ORM\OneToMany(mappedBy: 'booking', targetEntity: Product::class, cascade: ['persist', 'remove'])]
+    #[Groups(['booking:read'])]
+    private Collection $products;
+
+    public function __construct()
+    {
+        $this->products = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
         return $this->id;
     }
 
-    public function getQuandtite(): ?int
+    public function getQuantite(): ?int
     {
-        return $this->quandtite;
+        return $this->quantite;
     }
 
-    public function setQuandtite(int $quandtite): static
+    public function setQuantite(int $quantite): static
     {
-        $this->quandtite = $quandtite;
+        $this->quantite = $quantite;
 
         return $this;
+    }
+    public function updateStatus(): void
+    {
+        foreach ($this->products as $product) {
+            if (!$product->isAvailability()) {
+                $this->status = 'Indisponible';
+                return;
+            }
+        }
+        $this->status = 'Disponible';
     }
 
     public function getStatus(): ?string
@@ -82,15 +105,31 @@ class Booking
         return $this;
     }
 
-    public function getProduct(): ?Product
+    public function getProducts(): Collection
     {
-        return $this->product;
+        return $this->products;
     }
 
-    public function setProduct(Product $product): static
+    public function addProduct(Product $product): self
     {
-        $this->product = $product;
+        if (!$this->products->contains($product)) {
+            $this->products[] = $product;
+            $product->setBooking($this);
+        }
 
+        $this->updateStatus(); // Met à jour le statut du Booking après ajout d'un produit
+        return $this;
+    }
+
+    public function removeProduct(Product $product): self
+    {
+        if ($this->products->removeElement($product)) {
+            if ($product->getBooking() === $this) {
+                $product->setBooking(null);
+            }
+        }
+
+        $this->updateStatus(); // Met à jour le statut du Booking après suppression d'un produit
         return $this;
     }
 }

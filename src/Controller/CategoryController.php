@@ -129,7 +129,12 @@ final class CategoryController extends AbstractController
             UrlGeneratorInterface::ABSOLUTE_URL,
         );
 
-        return new JsonResponse($responseData, Response::HTTP_CREATED, ["location" => $location], true);
+        return new JsonResponse(
+            $responseData,
+            Response::HTTP_CREATED,
+            ["location" => $location],
+            true
+        );
     }
 
     #[Route('/{id}', name: 'delete', methods: ['DELETE'])]

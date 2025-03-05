@@ -33,7 +33,7 @@ class Product
     #[Groups(['product:read', 'booking:read'])]
     private ?bool $availability = null;
 
-    #[ORM\ManyToOne(inversedBy: 'products')]
+    #[ORM\ManyToOne(inversedBy: 'products', cascade: ["persist"])]
     #[ORM\JoinColumn(nullable: true)]
     #[Groups(['product:read', 'booking:read'])]
     private ?Picture $picture;

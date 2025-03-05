@@ -37,6 +37,10 @@ class Booking
     #[Groups(['booking:read'])]
     private Collection $products;
 
+    #[ORM\ManyToOne(inversedBy: 'bookings')]
+    #[Groups(['booking:read'])]
+    private ?User $user = null;
+
     public function __construct()
     {
         $this->products = new ArrayCollection();
@@ -130,6 +134,18 @@ class Booking
         }
 
         $this->updateStatus(); // Met à jour le statut du Booking après suppression d'un produit
+        return $this;
+    }
+
+    public function getUser(): ?User
+    {
+        return $this->user;
+    }
+
+    public function setUser(?User $user): static
+    {
+        $this->user = $user;
+
         return $this;
     }
 }

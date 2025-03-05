@@ -17,6 +17,8 @@ security:
       lazy: true
       stateless: true
       provider: app_user_provider
+      custom_authenticators:
+        - App\Security\ApiTokenAuthenticator
       json_login:
         check_path: app_api_login
 
@@ -29,11 +31,11 @@ security:
   # Easy way to control access for large sections of your site
   # Note: Only the *first* access control that matches will be used
   access_control:
-    - { path: ^/api/pictures, roles: ROLE_ADMIN }
-    - { path: ^/api/roles, roles: ROLE_ADMIN }
-    - { path: ^/api/stores, roles: ROLE_ADMIN }
-    - { path: ^/api/categories, roles: ROLE_ADMIN }
-    - { path: ^/api/products, roles: ROLE_ADMIN }
+    # - { path: ^/api/pictures, roles: ROLE_ADMIN }
+    # - { path: ^/api/roles, roles: ROLE_ADMIN }
+    # - { path: ^/api/stores, roles: ROLE_ADMIN }
+    # - { path: ^/api/categories, roles: ROLE_ADMIN }
+    # - { path: ^/api/products, roles: ROLE_ADMIN }
     - { path: ^/api/registration, roles: PUBLIC_ACCESS }
     - { path: ^/api/login, roles: PUBLIC_ACCESS }
     - { path: ^/api, roles: ROLE_USER }

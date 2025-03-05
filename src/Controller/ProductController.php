@@ -89,7 +89,7 @@ final class ProductController extends AbstractController
             foreach ($data['picture'] as $pictureId) {
                 $picture = $manager->getRepository(Picture::class)->find($pictureId);
                 if ($picture) {
-                    $product->setPicture($picture);
+                    $product->setIPicture($picture);
                 } else {
                     return new JsonResponse(
                         ['error' => "Image ID $pictureId introuvable."],
@@ -142,38 +142,38 @@ final class ProductController extends AbstractController
     #[Route('/{id}', name: 'show', methods: ['GET'])]
     public function show(int $id): JsonResponse
     {
-        $product = $this->manager->getRepository(Product::class)->findOneBy(['id' => $id]);
+        $product = $this->repository
+            ->findOneBy(['id' => $id]);
 
         if ($product) {
-            $this->serializer->serialize($product, 'json', ['groups' => 'product:read']);
-            $responseData = json_decode(
-                $this->serializer
-                    ->serialize(
-                        $product,
-                        'json',
-                        ['groups' => 'product:read']
-                    ),
+            $responseData = $this->serializer
+                ->serialize(
+                    $product,
+                    'json',
+                    ['groups' => 'product:read']
+                );
+            $productArray = json_decode(
+                $responseData,
                 true
-            ); // Convertir en tableau
-
-            // Supprimer updatedAt s'il est null
-            if (!isset($responseData['updatedAt'])) {
-                unset($responseData['updatedAt']);
-            }
-
-            // Génération de l'URL du nouveau produit
-            $location = $this->urlGenerator->generate(
-                'app_api_product_show',
-                ['id' => $product->getId()],
-                UrlGeneratorInterface::ABSOLUTE_URL
             );
-
+            if ($product->getUpdatedAt()) {
+                $productArray['updatedAt'] = $product
+                    ->getUpdatedAt()
+                    ->format('Y-m-d H:i:s');
+            } else {
+                unset($productArray['updatedAt']);
+            }
             return new JsonResponse(
                 $responseData,
                 Response::HTTP_OK,
-                ["Location" => $location]
+                [],
+                true
             );
         }
+        return new JsonResponse(
+            null,
+            Response::HTTP_NOT_FOUND
+        );
     }
     #[Route('/{id}', name: 'edit', methods: ['PUT'])]
     public function edit(
@@ -181,15 +181,26 @@ final class ProductController extends AbstractController
         Request $request,
         EntityManagerInterface $manager
     ): JsonResponse {
-        $product = $this->manager->getRepository(Product::class)->find($id);
+        $product = $this->manager->getRepository(
+            Product::class
+        )
+            ->find($id);
 
         if (!$product) {
-            return new JsonResponse(['error' => 'Produit introuvable.'], Response::HTTP_NOT_FOUND);
+            return new JsonResponse(
+                ['error' => 'Produit introuvable.'],
+                Response::HTTP_NOT_FOUND
+            );
         }
 
         $data = json_decode($request->getContent(), true);
         if (!$data) {
-            return new JsonResponse(['error' => 'Données invalides.'], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                [
+                    'error' => 'Données invalides.'
+                ],
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         $this->serializer->deserialize(

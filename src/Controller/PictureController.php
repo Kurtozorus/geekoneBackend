@@ -41,9 +41,6 @@ class PictureController extends AbstractController
     #[Route(name: 'new', methods: ['POST'])]
     public function new(
         Request $request,
-        ValidatorInterface $validator,
-        SluggerInterface $slugger,
-        CsrfTokenManagerInterface $csrfTokenManager
     ): JsonResponse {
 
         //Vérification du token CSRF pour prévenir les attaques CSRF
@@ -124,11 +121,11 @@ class PictureController extends AbstractController
             }
 
             //Génération du nom de fichier avec une extension sécurisée
-            // $fileName .= '.jpg'; // On force l'extension jpg pour éviter l'exécution de scripts malveillants
-            // file_put_contents(
-            //     $this->uploadDir . '/' . $fileName,
-            //     $fileContent
-            // );
+            $fileName .= '.jpg'; // On force l'extension jpg pour éviter l'exécution de scripts malveillants
+            file_put_contents(
+                $this->uploadDir . '/' . $fileName,
+                $fileContent
+            );
         }
 
         //Génération d'une URL sécurisée pour l'accès à l'image
@@ -145,7 +142,7 @@ class PictureController extends AbstractController
                 ENT_QUOTES,
                 'UTF-8'
             ),
-            $slugger
+            $this->slugger
         );
         //Protection contre XSS
         $picture->setSlug(
@@ -159,7 +156,7 @@ class PictureController extends AbstractController
         $picture->setCreatedAt(new \DateTimeImmutable());
 
         //Validation des données de l'entité avant de l'enregistrer
-        $errors = $validator->validate($picture);
+        $errors = $this->validator->validate($picture);
         if (count($errors) > 0) {
             return new JsonResponse(
                 ['error' => (string) $errors],

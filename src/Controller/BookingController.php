@@ -4,7 +4,6 @@ namespace App\Controller;
 
 use App\Entity\Booking;
 use App\Entity\Product;
-use App\Form\BookingType;
 use App\Repository\BookingRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -21,7 +20,7 @@ final class BookingController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $manager,
-        private BookingRepository $bookingRepository,
+        private BookingRepository $repository,
         private SerializerInterface $serializer,
         private UrlGeneratorInterface $urlGenerator
     ) {}
@@ -42,6 +41,11 @@ final class BookingController extends AbstractController
                 'status' => $booking->getStatus(),
                 'createdAt' => $booking->getCreatedAt()->format("d-m-Y H:i:s"),
                 'updatedAt' => $booking->getUpdatedAt(),
+                'user' => [
+                    'id' => $booking->getUser()->getId(),
+                    'firstName' => $booking->getUser()->getFirstName(),
+                    'lastName' => $booking->getUser()->getLastName(),
+                ],
             ];
         }, $bookings);
 
@@ -63,6 +67,14 @@ final class BookingController extends AbstractController
         $booking = $this->serializer->deserialize($request->getContent(), Booking::class, 'json');
         $booking->setCreatedAt(new DateTimeImmutable());
 
+        // Associer l'utilisateur connecté
+        $user = $this->getUser();
+        if (!$user) {
+            return new JsonResponse(['error' => 'Utilisateur non authentifié.'], Response::HTTP_UNAUTHORIZED);
+        }
+        $booking->setUser($user);
+
+
         if (isset($data['product']) && is_array($data['product'])) {
             foreach ($data['product'] as $productItem) {
                 $productId = is_array($productItem) ? ($productItem['id'] ?? null) : $productItem;
@@ -78,7 +90,15 @@ final class BookingController extends AbstractController
         $this->manager->persist($booking);
         $this->manager->flush();
 
-        $responseData = json_decode($this->serializer->serialize($booking, 'json', ['groups' => ['booking:read']]), true);
+        $responseData = json_decode(
+            $this->serializer
+                ->serialize(
+                    $booking,
+                    'json',
+                    ['groups' => ['booking:read']]
+                ),
+            true
+        );
         if (!isset($responseData['updatedAt'])) {
             unset($responseData['updatedAt']);
         }
@@ -89,13 +109,38 @@ final class BookingController extends AbstractController
     }
 
     #[Route('/{id}', name: 'show', methods: ['GET'])]
-    public function show(Booking $booking): JsonResponse
+    public function show(int $id): JsonResponse
     {
+        $booking = $this->repository
+            ->findOneBy(['id' => $id]);
+        if ($booking) {
+            $responseData = $this->serializer
+                ->serialize(
+                    $booking,
+                    'json',
+                    ['groups' => ['booking:read']]
+                );
+            $bookingArray = json_decode(
+                $responseData,
+                true
+            );
+            if ($booking->getUpdatedAt()) {
+                $bookingArray['updatedAt'] = $booking
+                    ->getUpdatedAt()
+                    ->format('Y-m-d H:i:s');
+            } else {
+                unset($bookingArray['updatedAt']);
+            }
+            return new JsonResponse(
+                $responseData,
+                Response::HTTP_OK,
+                [],
+                true
+            );
+        }
         return new JsonResponse(
-            $this->serializer->serialize($booking, 'json', ['groups' => ['booking:read']]),
-            Response::HTTP_OK,
-            [],
-            true
+            null,
+            Response::HTTP_NOT_FOUND
         );
     }
 

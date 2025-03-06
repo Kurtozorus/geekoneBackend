@@ -21,6 +21,7 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 class ApiTokenAuthenticator extends AbstractAuthenticator
 {
     public function __construct(
+
         private UserRepository $userRepository,
     ) {}
     /**
@@ -28,6 +29,7 @@ class ApiTokenAuthenticator extends AbstractAuthenticator
      * used for the request. Returning `false` will cause this authenticator
      * to be skipped.
      */
+
     public function supports(Request $request): ?bool
     {
         return $request->headers->has('X-AUTH-TOKEN');
@@ -37,6 +39,7 @@ class ApiTokenAuthenticator extends AbstractAuthenticator
     {
         $apiToken = $request->headers->get('X-AUTH-TOKEN');
         if (null === $apiToken) {
+          
             // The token header was empty, authentication fails with HTTP Status
             // Code 401 "Unauthorized"
             throw new CustomUserMessageAuthenticationException('No API token provided');
@@ -47,11 +50,6 @@ class ApiTokenAuthenticator extends AbstractAuthenticator
         if (null === $user) {
             throw new UserNotFoundException();
         }
-
-        // implement your own logic to get the user identifier from `$apiToken`
-        // e.g. by looking up a user in the database using its API key
-        // $userIdentifier = /** ... */;
-
         return new SelfValidatingPassport(new UserBadge($user->getUserIdentifier()));
     }
 

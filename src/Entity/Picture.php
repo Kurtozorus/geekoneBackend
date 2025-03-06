@@ -5,11 +5,9 @@ namespace App\Entity;
 use App\Repository\PictureRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
-use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\String\Slugger\SluggerInterface;
 
 #[ORM\Entity(repositoryClass: PictureRepository::class)]
 class Picture
@@ -21,6 +19,7 @@ class Picture
     private ?int $id = null;
 
     #[ORM\Column(length: 255)]
+    #[Groups(['product:read'])]
     private ?string $imagePath = null;
 
     #[ORM\Column(nullable: true, length: 32)]

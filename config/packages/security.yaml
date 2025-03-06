@@ -17,6 +17,8 @@ security:
       lazy: true
       stateless: true
       provider: app_user_provider
+      custom_authenticators:
+        - App\Security\ApiTokenAuthenticator
       json_login:
         check_path: app_api_login
 

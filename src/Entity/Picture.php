@@ -53,13 +53,14 @@ class Picture
     /**
      * @var Collection<int, Product>
      */
-    #[ORM\OneToMany(targetEntity: Product::class, mappedBy: 'picture', orphanRemoval: true)]
+    #[ORM\ManyToMany(targetEntity: Product::class, mappedBy: 'picture')]
     private Collection $products;
 
     public function __construct()
     {
         $this->products = new ArrayCollection();
     }
+
 
     public function getId(): ?int
     {
@@ -159,7 +160,7 @@ class Picture
     {
         if (!$this->products->contains($product)) {
             $this->products->add($product);
-            $product->setPicture($this);
+            $product->addPicture($this);
         }
 
         return $this;
@@ -168,10 +169,7 @@ class Picture
     public function removeProduct(Product $product): static
     {
         if ($this->products->removeElement($product)) {
-            // set the owning side to null (unless already changed)
-            if ($product->getPicture() === $this) {
-                $product->setPicture(null);
-            }
+            $product->removePicture($this);
         }
 
         return $this;

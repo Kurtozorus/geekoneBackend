@@ -37,7 +37,7 @@ final class BookingController extends AbstractController
                     'id' => $product->getId(),
                     'title' => $product->getTitle(),
                     'availability' => $product->isAvailability() ? 'Disponible' : 'Indisponible'
-                ], $booking->getProducts()->toArray()),
+                ], $booking->getProduct()->toArray()),
                 'status' => $booking->getStatus(),
                 'createdAt' => $booking->getCreatedAt()->format("d-m-Y H:i:s"),
                 'updatedAt' => $booking->getUpdatedAt(),

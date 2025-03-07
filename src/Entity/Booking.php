@@ -33,18 +33,21 @@ class Booking
     #[Groups(['booking:read'])]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    #[ORM\OneToMany(mappedBy: 'booking', targetEntity: Product::class, cascade: ['persist', 'remove'])]
-    #[Groups(['booking:read'])]
-    private Collection $products;
-
     #[ORM\ManyToOne(inversedBy: 'bookings')]
     #[Groups(['booking:read'])]
     private ?User $user = null;
 
+    /**
+     * @var Collection<int, Product>
+     */
+    #[ORM\ManyToMany(targetEntity: Product::class, mappedBy: 'booking')]
+    private Collection $product;
+
     public function __construct()
     {
-        $this->products = new ArrayCollection();
+        $this->product = new ArrayCollection();
     }
+
 
     public function getId(): ?int
     {
@@ -61,16 +64,6 @@ class Booking
         $this->quantite = $quantite;
 
         return $this;
-    }
-    public function updateStatus(): void
-    {
-        foreach ($this->products as $product) {
-            if (!$product->isAvailability()) {
-                $this->status = 'Indisponible';
-                return;
-            }
-        }
-        $this->status = 'Disponible';
     }
 
     public function getStatus(): ?string
@@ -109,33 +102,7 @@ class Booking
         return $this;
     }
 
-    public function getProducts(): Collection
-    {
-        return $this->products;
-    }
 
-    public function addProduct(Product $product): self
-    {
-        if (!$this->products->contains($product)) {
-            $this->products[] = $product;
-            $product->setBooking($this);
-        }
-
-        $this->updateStatus(); // Met à jour le statut du Booking après ajout d'un produit
-        return $this;
-    }
-
-    public function removeProduct(Product $product): self
-    {
-        if ($this->products->removeElement($product)) {
-            if ($product->getBooking() === $this) {
-                $product->setBooking(null);
-            }
-        }
-
-        $this->updateStatus(); // Met à jour le statut du Booking après suppression d'un produit
-        return $this;
-    }
 
     public function getUser(): ?User
     {
@@ -145,6 +112,33 @@ class Booking
     public function setUser(?User $user): static
     {
         $this->user = $user;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function getProduct(): Collection
+    {
+        return $this->product;
+    }
+
+    public function addProduct(Product $product): static
+    {
+        if (!$this->product->contains($product)) {
+            $this->product->add($product);
+            $product->addBooking($this);
+        }
+
+        return $this;
+    }
+
+    public function removeProduct(Product $product): static
+    {
+        if ($this->product->removeElement($product)) {
+            $product->removeBooking($this);
+        }
 
         return $this;
     }

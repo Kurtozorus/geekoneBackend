@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\ProductRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Attribute\Groups;
 
@@ -17,26 +18,21 @@ class Product
     #[Groups(['product:read'])]
     private ?int $id = null;
 
-    #[ORM\Column(length: 32)]
-    #[Groups(['product:read', 'booking:read'])]
+    #[ORM\Column(length: 50)]
+    #[Groups(['product:read'])]
     private ?string $title = null;
 
-    #[ORM\Column(length: 255)]
+    #[ORM\Column(type: Types::TEXT)]
     #[Groups(['product:read'])]
     private ?string $description = null;
 
     #[ORM\Column]
-    #[Groups(['product:read', 'booking:read'])]
+    #[Groups(['product:read'])]
     private ?float $price = null;
 
     #[ORM\Column]
-    #[Groups(['product:read', 'booking:read'])]
+    #[Groups(['product:read'])]
     private ?bool $availability = null;
-
-    #[ORM\ManyToOne(inversedBy: 'products', cascade: ["persist"])]
-    #[ORM\JoinColumn(nullable: true)]
-    #[Groups(['product:read', 'booking:read'])]
-    private ?Picture $picture;
 
     #[ORM\Column]
     #[Groups(['product:read'])]
@@ -46,21 +42,31 @@ class Product
     #[Groups(['product:read'])]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    #[ORM\ManyToOne(inversedBy: 'products')]
-    #[ORM\JoinColumn(nullable: true)]
-    private ?Booking $booking = null;
+    /**
+     * @var Collection<int, Picture>
+     */
+    #[ORM\ManyToMany(targetEntity: Picture::class, inversedBy: 'products', cascade: ["persist"])]
+    #[Groups(['product:read'])]
+    private Collection $picture;
+
+    /**
+     * @var Collection<int, Booking>
+     */
+    #[ORM\ManyToMany(targetEntity: Booking::class, inversedBy: 'product')]
+    private Collection $booking;
 
     /**
      * @var Collection<int, Category>
      */
-    #[ORM\ManyToMany(targetEntity: Category::class, inversedBy: 'products', cascade: ['persist'])]
-    #[ORM\JoinTable(name: 'product_category')]
+    #[ORM\ManyToMany(targetEntity: Category::class, inversedBy: 'products', cascade: ["persist"])]
     #[Groups(['product:read'])]
-    private Collection $categories;
+    private Collection $category;
 
     public function __construct()
     {
-        $this->categories = new ArrayCollection();
+        $this->picture = new ArrayCollection();
+        $this->booking = new ArrayCollection();
+        $this->category = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -113,22 +119,6 @@ class Product
     {
         $this->availability = $availability;
 
-        if ($this->booking) {
-            $this->booking->updateStatus(); // Met à jour le statut de la réservation
-        }
-
-        return $this;
-    }
-
-    public function getPicture(): ?Picture
-    {
-        return $this->picture;
-    }
-
-    public function setPicture(?Picture $picture): static
-    {
-        $this->picture = $picture;
-
         return $this;
     }
 
@@ -156,29 +146,66 @@ class Product
         return $this;
     }
 
-    public function getBooking(): ?Booking
+    /**
+     * @return Collection<int, Picture>
+     */
+    public function getPicture(): Collection
+    {
+        return $this->picture;
+    }
+
+    public function addPicture(Picture $picture): static
+    {
+        if (!$this->picture->contains($picture)) {
+            $this->picture->add($picture);
+        }
+
+        return $this;
+    }
+
+    public function removePicture(Picture $picture): static
+    {
+        $this->picture->removeElement($picture);
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Booking>
+     */
+    public function getBooking(): Collection
     {
         return $this->booking;
     }
 
-    public function setBooking(?Booking $booking): self
+    public function addBooking(Booking $booking): static
     {
-        $this->booking = $booking;
+        if (!$this->booking->contains($booking)) {
+            $this->booking->add($booking);
+        }
+
+        return $this;
+    }
+
+    public function removeBooking(Booking $booking): static
+    {
+        $this->booking->removeElement($booking);
+
         return $this;
     }
 
     /**
      * @return Collection<int, Category>
      */
-    public function getCategories(): array
+    public function getCategory(): Collection
     {
-        return $this->categories->getValues(); // Convertit la collection en un vrai tableau
+        return $this->category;
     }
 
     public function addCategory(Category $category): static
     {
-        if (!$this->categories->contains($category)) {
-            $this->categories->add($category);
+        if (!$this->category->contains($category)) {
+            $this->category->add($category);
         }
 
         return $this;
@@ -186,7 +213,7 @@ class Product
 
     public function removeCategory(Category $category): static
     {
-        $this->categories->removeElement($category);
+        $this->category->removeElement($category);
 
         return $this;
     }

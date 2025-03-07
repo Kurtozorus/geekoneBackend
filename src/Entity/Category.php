@@ -30,7 +30,7 @@ class Category
     /**
      * @var Collection<int, Product>
      */
-    #[ORM\ManyToMany(targetEntity: Product::class, mappedBy: 'categories')]
+    #[ORM\ManyToMany(targetEntity: Product::class, mappedBy: 'category')]
     private Collection $products;
 
     public function __construct()

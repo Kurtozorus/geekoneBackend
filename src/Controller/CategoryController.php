@@ -3,9 +3,6 @@
 namespace App\Controller;
 
 use App\Entity\Category;
-use App\Form\CategoryType;
-use App\Repository\CategoryRepository;
-use App\Repository\ProductRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -21,7 +18,6 @@ final class CategoryController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $manager,
-        private ProductRepository $repository,
         private SerializerInterface $serializer,
         private UrlGeneratorInterface $urlGenerator
     ) {}

@@ -22,8 +22,8 @@ final class ProductController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $manager,
-        private ProductRepository $repository,
         private SerializerInterface $serializer,
+        private ProductRepository $repository,
         private UrlGeneratorInterface $urlGenerator
     ) {}
     #[Route('/', name: 'index', methods: ['GET'])]
@@ -88,14 +88,16 @@ final class ProductController extends AbstractController
         if (isset($data['picture']) && is_array($data['picture'])) {
             foreach ($data['picture'] as $pictureId) {
                 $picture = $manager->getRepository(Picture::class)->find($pictureId);
-                if ($picture) {
-                    $product->setIPicture($picture);
-                } else {
+                if (!$picture) {
                     return new JsonResponse(
                         ['error' => "Image ID $pictureId introuvable."],
                         Response::HTTP_NOT_FOUND
                     );
                 }
+
+                dump($picture);
+                die();
+                $product->addPicture($picture);
             }
         }
 
@@ -104,6 +106,7 @@ final class ProductController extends AbstractController
 
         // Persistance et sauvegarde en base de données
         $manager->persist($product);
+        dump($product);
         $manager->flush();
 
         // Sérialisation de la réponse
